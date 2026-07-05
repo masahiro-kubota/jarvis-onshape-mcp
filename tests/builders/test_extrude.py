@@ -156,6 +156,23 @@ class TestExtrudeBuilder:
         assert op_param["btType"] == "BTMParameterEnum-145"
         assert op_param["value"] == "ADD"
 
+    def test_all_parameters_use_valid_library_relation_type(self):
+        """Regression: every parameter must use a valid libraryRelationType.
+
+        Onshape's deserializer rejects ``libraryRelationType: "NONE"`` with a
+        BTWeirdStringValueException at parameters[0], failing the whole feature
+        with HTTP 400 (live-verified against cad.onshape.com). The valid enum
+        value is "DEFAULT". This guards against regressing to "NONE", which
+        silently broke every feature-creating builder that used it.
+        """
+        extrude = ExtrudeBuilder(sketch_feature_id="sketch1")
+        parameters = extrude.build()["feature"]["parameters"]
+        for p in parameters:
+            assert p["libraryRelationType"] == "DEFAULT", (
+                f"{p['parameterId']} uses invalid libraryRelationType "
+                f"{p['libraryRelationType']!r}"
+            )
+
     def test_build_depth_parameter_without_variable(self):
         """Bare numbers default to mm; value is meters."""
         extrude = ExtrudeBuilder(sketch_feature_id="sketch1", depth=3.5)

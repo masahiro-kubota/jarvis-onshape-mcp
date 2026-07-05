@@ -136,7 +136,10 @@ class LinearPatternBuilder:
                     "queryString": "",
                 }
             ],
-            "parameterId": "directionQuery",
+            # Onshape's linearPattern spec names the direction parameter
+            # `directionOne` (not `directionQuery`). A wrong id is silently
+            # dropped, leaving the pattern with no direction -> REGEN_ERROR.
+            "parameterId": "directionOne",
             "parameterName": "",
             "libraryRelationType": "DEFAULT",
         }
@@ -171,14 +174,13 @@ class LinearPatternBuilder:
                 "namespace": "",
                 "parameters": [
                     {
-                        "btType": "BTMParameterQueryList-148",
-                        "queries": [
-                            {
-                                "btType": "BTMIndividualQuery-138",
-                                "deterministicIds": self.feature_queries,
-                            }
-                        ],
-                        "parameterId": "entities",
+                        # FEATURE patterns carry the features to replicate in
+                        # the `instanceFunction` feature-list parameter, NOT in
+                        # `entities` (which is for PART patterns). Feature ids
+                        # placed in an entity query never resolve -> REGEN_ERROR.
+                        "btType": "BTMParameterFeatureList-1749",
+                        "featureIds": self.feature_queries,
+                        "parameterId": "instanceFunction",
                         "parameterName": "",
                         "libraryRelationType": "DEFAULT",
                     },

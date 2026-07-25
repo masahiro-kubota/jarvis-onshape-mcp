@@ -66,6 +66,51 @@ def _ref_param(parameter_id: str, entity_ref: str) -> Dict[str, Any]:
     }
 
 
+_EXTERNAL_AXIS_IDS = {
+    "HORIZONTAL_AXIS": "II",
+    "X_AXIS": "II",
+    "II": "II",
+    "VERTICAL_AXIS": "IB",
+    "Y_AXIS": "IB",
+    "IB": "IB",
+}
+
+
+def _external_ref_param(parameter_id: str, external_ref: str) -> Dict[str, Any]:
+    """Build a sketch-datum query reference.
+
+    UI-authored sketch constraints refer to the horizontal and vertical
+    sketch axes through BTMParameterQueryList-148, not local entity strings.
+    Treating ``II`` or ``IB`` as ``localFirst`` causes
+    SKETCH_MISSING_LOCAL_REFERENCE.
+    """
+    normalized = external_ref.upper()
+    try:
+        deterministic_id = _EXTERNAL_AXIS_IDS[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            "external sketch reference must be one of "
+            "HORIZONTAL_AXIS|X_AXIS|II|VERTICAL_AXIS|Y_AXIS|IB; "
+            f"got {external_ref!r}"
+        ) from exc
+
+    return {
+        "btType": "BTMParameterQueryList-148",
+        "libraryRelationType": "DEFAULT",
+        "queries": [
+            {
+                "btType": "BTMIndividualQuery-138",
+                "queryStatement": None,
+                "queryString": "",
+                "deterministicIds": [deterministic_id],
+            }
+        ],
+        "filter": None,
+        "parameterId": parameter_id,
+        "parameterName": "",
+    }
+
+
 def _quantity_param(parameter_id: str, expression: str) -> Dict[str, Any]:
     """Build a dimension-value parameter (BTMParameterQuantity-147).
 
@@ -156,8 +201,14 @@ def _radius(refs: List[str], value: str) -> Dict[str, Any]:
     )
 
 
-def _distance(refs: List[str], value: str,
-              direction: str = "MINIMUM") -> Dict[str, Any]:
+def _distance(
+    refs: List[str],
+    value: str,
+    direction: str = "MINIMUM",
+    *,
+    external_first: Optional[str] = None,
+    external_second: Optional[str] = None,
+) -> Dict[str, Any]:
     """Distance between two entities/points.
 
     `direction` is a DimensionDirection enum: MINIMUM (aligned), HORIZONTAL,
@@ -165,18 +216,42 @@ def _distance(refs: List[str], value: str,
     hub-to-tip center distance, suggesting the UI picked HORIZONTAL because
     both centers were on the x-axis. Default here: MINIMUM (least opinionated).
     """
-    if len(refs) != 2:
+    if external_first and external_second:
+        raise ValueError(
+            "DISTANCE accepts at most one of externalFirst or externalSecond"
+        )
+    if external_first or external_second:
+        if len(refs) != 1:
+            raise ValueError(
+                "DISTANCE with an external sketch reference takes exactly "
+                f"1 local entity ref; got {len(refs)}"
+            )
+    elif len(refs) != 2:
         raise ValueError(f"DISTANCE takes 2 entity refs; got {len(refs)}")
     if direction.upper() not in {"MINIMUM", "HORIZONTAL", "VERTICAL"}:
         raise ValueError(
             f"DISTANCE direction must be MINIMUM|HORIZONTAL|VERTICAL; got {direction!r}"
         )
     expr = _expr_length(value)
+    if external_first:
+        ref_parameters = [
+            _external_ref_param("externalFirst", external_first),
+            _ref_param("localSecond", refs[0]),
+        ]
+    elif external_second:
+        ref_parameters = [
+            _ref_param("localFirst", refs[0]),
+            _external_ref_param("externalSecond", external_second),
+        ]
+    else:
+        ref_parameters = [
+            _ref_param("localFirst", refs[0]),
+            _ref_param("localSecond", refs[1]),
+        ]
     return _wrap(
         "DISTANCE",
         [
-            _ref_param("localFirst", refs[0]),
-            _ref_param("localSecond", refs[1]),
+            *ref_parameters,
             _enum_param("direction", "DimensionDirection", direction.upper()),
             _quantity_param("length", expr),
             _enum_param("alignment", "DimensionAlignment", "ALIGNED"),
@@ -317,6 +392,8 @@ def serialize(
     value: Optional[Any] = None,
     direction: Optional[str] = None,
     constraint_id: Optional[str] = None,
+    external_first: Optional[str] = None,
+    external_second: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Turn a user-level constraint spec into BTMSketchConstraint-2 JSON.
 
@@ -335,6 +412,11 @@ def serialize(
             Stamped onto the wire dict's `entityId` field so edit_sketch can
             find + remove this constraint by that id later. Leave None for
             one-shot create_sketch constraints that won't be edited.
+        external_first: Sketch datum axis for the first side of DISTANCE.
+            Accepts HORIZONTAL_AXIS/X_AXIS/II or VERTICAL_AXIS/Y_AXIS/IB.
+            With this field, pass exactly one local ref; it becomes localSecond.
+        external_second: Sketch datum axis for the second side of DISTANCE.
+            With this field, pass exactly one local ref; it becomes localFirst.
     """
     ctype = constraint_type.upper().replace("-", "_").replace(" ", "_")
     if entity is not None:
@@ -363,6 +445,11 @@ def serialize(
         if direction is None:
             direction = "MINIMUM"
 
+    if (external_first or external_second) and ctype != "DISTANCE":
+        raise ValueError(
+            f"{ctype} does not support external sketch references"
+        )
+
     if ctype in _ENTITY_REF_ONLY:
         if value is not None:
             raise ValueError(f"{ctype} does not take a dimension value")
@@ -375,8 +462,14 @@ def serialize(
         if value is None:
             raise ValueError(f"{ctype} requires a dimension value")
         fn = _DIMENSIONED[ctype]
-        if ctype == "DISTANCE" and direction:
-            out = _distance(refs, value, direction=direction)
+        if ctype == "DISTANCE":
+            out = _distance(
+                refs,
+                value,
+                direction=direction or "MINIMUM",
+                external_first=external_first,
+                external_second=external_second,
+            )
         else:
             out = fn(refs, value)
     elif ctype in _BINARY_PAIR:

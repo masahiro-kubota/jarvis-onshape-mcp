@@ -346,6 +346,8 @@ async def edit_sketch(
                 value=spec.get("value"),
                 direction=spec.get("direction"),
                 constraint_id=spec.get("id"),
+                external_first=spec.get("externalFirst"),
+                external_second=spec.get("externalSecond"),
             )
         )
 

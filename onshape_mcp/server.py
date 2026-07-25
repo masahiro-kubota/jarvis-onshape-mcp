@@ -96,6 +96,7 @@ call.
   * coordinate-first (no `id` on entities) — hand-compute positions, fast for 1-3 obvious primitives
   * constraint-first (each entity has an `id`, plus top-level `constraints[]`) — solver-driven, for drawings with tangencies / dimensions / concentricities. 14 constraint types supported.
 - edit_sketch — iterate on an existing sketch. addEntities/addConstraints/removeIds; cascade-removes constraints that reference a removed entity, reports cascaded_removals structurally.
+- For DISTANCE to sketch datum axes, pass one local entity plus externalFirst/externalSecond = HORIZONTAL_AXIS or VERTICAL_AXIS. Never pass II/IB as local entity refs.
 - create_sketch_rectangle / _rounded_rectangle_sketch — single rect fast path
 - create_sketch_circle / _line / _arc — single primitives
 
@@ -119,6 +120,7 @@ list_entities, or from create_offset_plane).
 - get_features / get_body_details — feature tree with statuses, per-part face/edge IDs
 - get_mass_properties / get_bounding_box / measure
 - get_face_coordinate_system — outward-facing coord frame for a face
+- inspect_sketch entity coordinates are definition seeds, not guaranteed solver-resolved values. Trust constraint expressions and regenerated topology from describe_part_studio/list_entities.
 
 ### Rendering
 - render_part_studio_views / render_assembly_views — named views (iso/top/front/right/left/back/bottom)
@@ -1215,7 +1217,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "constraints": {
                         "type": "array",
-                        "description": "Constraint-first sketch solver directives. Each item: {type, entities?:[id,...] | entity?:id, value?, direction?}. See tool description for supported types + entity-ref syntax.",
+                        "description": "Constraint-first sketch solver directives. Each item: {type, entities?:[id,...] | entity?:id, value?, direction?, externalFirst?, externalSecond?}. DISTANCE may reference a sketch datum axis with externalFirst/externalSecond = HORIZONTAL_AXIS or VERTICAL_AXIS.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -1229,6 +1231,14 @@ async def list_tools() -> list[Tool]:
                                 "direction": {
                                     "type": "string",
                                     "enum": ["MINIMUM", "HORIZONTAL", "VERTICAL"],
+                                },
+                                "externalFirst": {
+                                    "type": "string",
+                                    "description": "For DISTANCE with one local entity, place the sketch datum on the first side. Accepts HORIZONTAL_AXIS/X_AXIS/II or VERTICAL_AXIS/Y_AXIS/IB.",
+                                },
+                                "externalSecond": {
+                                    "type": "string",
+                                    "description": "For DISTANCE with one local entity, place the sketch datum on the second side. Accepts HORIZONTAL_AXIS/X_AXIS/II or VERTICAL_AXIS/Y_AXIS/IB.",
                                 },
                             },
                             "required": ["type"],
@@ -1284,7 +1294,10 @@ async def list_tools() -> list[Tool]:
                             "Constraint dicts to append. Each must carry a "
                             "unique `id`. Reference entities by user-supplied "
                             "`id` (e.g. `\"entities\": [\"line1\", \"circle1\"]`) "
-                            "or sub-points (`\"line1.start\"`)."
+                            "or sub-points (`\"line1.start\"`). For a distance "
+                            "to a sketch datum, pass one local `entity` plus "
+                            "`externalFirst` or `externalSecond` as "
+                            "`HORIZONTAL_AXIS` or `VERTICAL_AXIS`."
                         ),
                         "items": {"type": "object"},
                     },
@@ -1311,6 +1324,11 @@ async def list_tools() -> list[Tool]:
                 "/ `.center`) that constraint refs target. Cheaper and easier "
                 "to scan than `get_features`; includes a human-readable text "
                 "block plus machine-readable lists.\n\n"
+                "Important: entity coordinates come from the BTMSketch "
+                "definition and are solver seed values, not guaranteed "
+                "post-solve geometry. Treat constraint expressions as the "
+                "sketch design truth and verify regenerated dimensions with "
+                "`describe_part_studio` or `list_entities`.\n\n"
                 "Locate the sketch by `sketchFeatureId` (preferred), by "
                 "`sketchName`, or — if the element has exactly one sketch — "
                 "omit both."

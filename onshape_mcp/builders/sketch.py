@@ -1137,6 +1137,7 @@ class SketchBuilder:
           {"type": "TANGENT",  "entities": ["line1", "circle1"]}
           {"type": "DIAMETER", "entity":   "hub", "value": "50 mm"}
           {"type": "DISTANCE", "entities": ["a.center", "b.center"], "value": "100 mm", "direction": "MINIMUM"}
+          {"type": "DISTANCE", "entity": "top.start", "externalFirst": "HORIZONTAL_AXIS", "value": "18.45 mm", "direction": "VERTICAL"}
           {"type": "OFFSET",   "entities": ["hub_offset", "hub"]}
 
         See sketch_constraints.py for the full list of supported types.
@@ -1160,6 +1161,8 @@ class SketchBuilder:
                 value=spec.get("value"),
                 direction=spec.get("direction"),
                 constraint_id=spec.get("id"),
+                external_first=spec.get("externalFirst"),
+                external_second=spec.get("externalSecond"),
             )
         )
         return self

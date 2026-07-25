@@ -29,6 +29,16 @@ def _refs(result):
             if p.get("btType") == "BTMParameterString-149"]
 
 
+def _external_ids(result, parameter_id):
+    parameter = _param(result, parameter_id)
+    assert parameter["btType"] == "BTMParameterQueryList-148"
+    return [
+        deterministic_id
+        for query in parameter["queries"]
+        for deterministic_id in query.get("deterministicIds", [])
+    ]
+
+
 def test_envelope_defaults():
     r = serialize("HORIZONTAL", entity="line1")
     assert r["btType"] == "BTMSketchConstraint-2"
@@ -108,6 +118,98 @@ def test_distance_horizontal_direction():
     r = serialize("DISTANCE", entities=["a", "b"], value="100 mm",
                   direction="HORIZONTAL")
     assert _param(r, "direction")["value"] == "HORIZONTAL"
+
+
+def test_distance_from_horizontal_sketch_axis():
+    r = serialize(
+        "DISTANCE",
+        entity="flange.top.start",
+        value="#servo_flange_top_z",
+        direction="VERTICAL",
+        external_first="HORIZONTAL_AXIS",
+    )
+    assert _external_ids(r, "externalFirst") == ["II"]
+    assert _param(r, "localSecond")["value"] == "flange.top.start"
+    assert _param(r, "length")["expression"] == "#servo_flange_top_z"
+    assert _param(r, "direction")["value"] == "VERTICAL"
+    assert "localFirst" not in {
+        parameter["parameterId"] for parameter in r["parameters"]
+    }
+
+
+def test_distance_to_vertical_sketch_axis():
+    r = serialize(
+        "DISTANCE",
+        entity="hole.center",
+        value="14.25 mm",
+        direction="HORIZONTAL",
+        external_second="VERTICAL_AXIS",
+    )
+    assert _param(r, "localFirst")["value"] == "hole.center"
+    assert _external_ids(r, "externalSecond") == ["IB"]
+
+
+@pytest.mark.parametrize(
+    ("alias", "deterministic_id"),
+    [
+        ("HORIZONTAL_AXIS", "II"),
+        ("X_AXIS", "II"),
+        ("II", "II"),
+        ("VERTICAL_AXIS", "IB"),
+        ("Y_AXIS", "IB"),
+        ("IB", "IB"),
+    ],
+)
+def test_external_axis_aliases(alias, deterministic_id):
+    r = serialize(
+        "DISTANCE",
+        entity="p",
+        value="1 mm",
+        direction="VERTICAL",
+        external_first=alias,
+    )
+    assert _external_ids(r, "externalFirst") == [deterministic_id]
+
+
+def test_external_axis_rejects_two_local_refs():
+    with pytest.raises(ValueError, match="exactly 1 local entity"):
+        serialize(
+            "DISTANCE",
+            entities=["a", "b"],
+            value="1 mm",
+            external_first="HORIZONTAL_AXIS",
+        )
+
+
+def test_external_axis_rejects_both_sides():
+    with pytest.raises(ValueError, match="at most one"):
+        serialize(
+            "DISTANCE",
+            entity="p",
+            value="1 mm",
+            external_first="HORIZONTAL_AXIS",
+            external_second="VERTICAL_AXIS",
+        )
+
+
+def test_external_axis_rejects_unknown_alias():
+    with pytest.raises(ValueError, match="external sketch reference"):
+        serialize(
+            "DISTANCE",
+            entity="p",
+            value="1 mm",
+            external_first="ORIGIN",
+        )
+
+
+def test_non_distance_rejects_external_axis():
+    with pytest.raises(ValueError, match="does not support external"):
+        serialize(
+            "DIAMETER",
+            entity="circle",
+            value="2 mm",
+            external_first="HORIZONTAL_AXIS",
+        )
 
 
 def test_distance_rejects_bad_direction():

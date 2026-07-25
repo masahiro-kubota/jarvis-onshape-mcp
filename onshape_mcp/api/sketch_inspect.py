@@ -280,10 +280,16 @@ def inspect_sketch(
     """Produce a compact structured + text summary of one sketch.
 
     Returns a dict with:
-        name, feature_id, status, plane_query, entities, constraints, text
+        name, feature_id, status, plane_query, entity_geometry_basis,
+        entity_geometry_note, entities, constraints, text
     where `entities` and `constraints` are lists of per-item summary dicts
     (see `_summarize_entity` / `_summarize_constraint`) and `text` is a
     ready-to-display multi-line string.
+
+    The /features endpoint stores entity geometry as solver seed/definition
+    data. Constraint expressions and regenerated Part Studio topology are
+    authoritative after solve; do not present the seed coordinates as solved
+    dimensions.
     """
     feature = find_sketch(
         features_doc,
@@ -312,6 +318,8 @@ def inspect_sketch(
     header = (
         f'SKETCH "{name}"  id={fid}  status={status}\n'
         f"  plane deterministicIds: {plane_ids or '(none)'}\n"
+        "  entity geometry: definition seed (not solver-resolved; "
+        "constraints and regenerated topology are authoritative)\n"
     )
     if entities:
         entity_lines = ["ENTITIES ({}):".format(len(entities))]
@@ -334,6 +342,13 @@ def inspect_sketch(
         "feature_id": fid,
         "status": status,
         "plane_query": plane_ids,
+        "entity_geometry_basis": "definition_seed",
+        "entity_geometry_note": (
+            "Entity coordinates come from the BTMSketch feature definition "
+            "and may remain at pre-solve seed values. Use constraint "
+            "expressions plus describe_part_studio/list_entities for "
+            "regenerated geometry."
+        ),
         "entities": entities,
         "constraints": constraints,
         "text": text,
